@@ -21,9 +21,6 @@ public partial class DbClinicaContext : DbContext
 
     public virtual DbSet<Paciente> Paciente { get; set; }
 
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-        => optionsBuilder.UseSqlServer("Name=ConexaoSqlServer");
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Consulta>(entity =>

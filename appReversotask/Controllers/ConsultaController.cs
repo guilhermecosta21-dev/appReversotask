@@ -2,37 +2,43 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using appReversotask.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
-using appReversotask.Models;
 using Microsoft.AspNetCore.Authorization;
 
-namespace appReversotask.Controllers
+
+
+namespace appreversotask.Controllers
 {
-    [Authorize] // Impede o acesso de usuários não autenticados
+    // Controller responsável pelo gerenciamento de consultas (CRUD)
+    [Authorize]
     public class ConsultaController : Controller
     {
+        // Contexto do banco de dados
         private readonly DbClinicaContext _context;
 
+        // Injeção de dependência do DbContext
         public ConsultaController(DbClinicaContext context)
         {
             _context = context;
         }
 
         // GET: Consulta
+        // Lista as consultas do paciente autenticado
         public async Task<IActionResult> Index()
         {
-            // Verifica se a sessão existe
-            var pacienteId = HttpContext.Session.GetInt32("PacienteId");
+            // Obtém o ID do paciente logado através da Session
+            var pacienteIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
-            if (pacienteId == null)
+            // Se não houver paciente autenticado, redireciona para o login
+            if (string.IsNullOrEmpty(pacienteIdClaim) || !int.TryParse(pacienteIdClaim, out int pacienteId))
             {
-                // Se não estiver logado, redireciona para a tela de login
                 return RedirectToAction("Login", "Account");
             }
 
-            // Código normal da Index...
+            // Busca somente as consultas pertencentes ao paciente logado
             var consultas = await _context.Consulta
                 .Include(c => c.Medico)
                 .Include(c => c.Paciente)
@@ -45,7 +51,7 @@ namespace appReversotask.Controllers
         // GET: Consulta/Details/5
         public async Task<IActionResult> Details(int? id)
         {
-            if (id == null || _context.Consulta == null)
+            if (id == null)
             {
                 return NotFound();
             }
@@ -54,6 +60,7 @@ namespace appReversotask.Controllers
                 .Include(c => c.Medico)
                 .Include(c => c.Paciente)
                 .FirstOrDefaultAsync(m => m.Codigo == id);
+
             if (consulta == null)
             {
                 return NotFound();
@@ -65,53 +72,91 @@ namespace appReversotask.Controllers
         // GET: Consulta/Create
         public IActionResult Create()
         {
-            ViewData["MedicoId"] = new SelectList(_context.Medicos, "Codigo", "Codigo");
-            ViewData["PacienteId"] = new SelectList(_context.Paciente, "Codigo", "Codigo");
+            // Lista de médicos disponíveis
+            ViewData["MedicoId"] = new SelectList(
+                _context.Medicos,
+                "Codigo",
+                "Nome"
+            );
+
             return View();
         }
 
         // POST: Consulta/Create
-        // To protect from overposting attacks, enable the specific properties you want to bind to.
-        // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("Codigo,DataHora,StatusConsulta,PacienteId,MedicoId")] Consulta consulta)
+        public async Task<IActionResult> Create(
+            [Bind("DataHora,StatusConsulta,MedicoId")] Consulta consulta)
         {
+            // Obtém o ID do paciente autenticado
+            var pacienteId = HttpContext.Session.GetInt32("PacienteId");
+
+            // Caso não esteja autenticado, retorna para o login
+            if (pacienteId == null)
+            {
+                return RedirectToAction("Login", "Account");
+            }
+
+            // Vincula automaticamente a consulta ao paciente logado
+            consulta.PacienteId = pacienteId.Value;
+
             if (ModelState.IsValid)
             {
                 _context.Add(consulta);
                 await _context.SaveChangesAsync();
+
                 return RedirectToAction(nameof(Index));
             }
-            ViewData["MedicoId"] = new SelectList(_context.Medicos, "Codigo", "Codigo", consulta.MedicoId);
-            ViewData["PacienteId"] = new SelectList(_context.Paciente, "Codigo", "Codigo", consulta.PacienteId);
+
+            // Recarrega a lista de médicos caso exista erro de validação
+            ViewData["MedicoId"] = new SelectList(
+                _context.Medicos,
+                "Codigo",
+                "Nome",
+                consulta.MedicoId
+            );
+
             return View(consulta);
         }
 
         // GET: Consulta/Edit/5
         public async Task<IActionResult> Edit(int? id)
         {
-            if (id == null || _context.Consulta == null)
+            if (id == null)
             {
                 return NotFound();
             }
 
             var consulta = await _context.Consulta.FindAsync(id);
+
             if (consulta == null)
             {
                 return NotFound();
             }
-            ViewData["MedicoId"] = new SelectList(_context.Medicos, "Codigo", "Codigo", consulta.MedicoId);
-            ViewData["PacienteId"] = new SelectList(_context.Paciente, "Codigo", "Codigo", consulta.PacienteId);
+
+            ViewData["MedicoId"] = new SelectList(
+                _context.Medicos,
+                "Codigo",
+                "Nome",
+                consulta.MedicoId
+            );
+
+            ViewData["PacienteId"] = new SelectList(
+                _context.Paciente,
+                "Codigo",
+                "Nome",
+                consulta.PacienteId
+            );
+
             return View(consulta);
         }
 
         // POST: Consulta/Edit/5
-        // To protect from overposting attacks, enable the specific properties you want to bind to.
-        // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(int id, [Bind("Codigo,DataHora,StatusConsulta,PacienteId,MedicoId")] Consulta consulta)
+        public async Task<IActionResult> Edit(
+            int id,
+            [Bind("Codigo,DataHora,StatusConsulta,PacienteId,MedicoId")] Consulta consulta)
         {
             if (id != consulta.Codigo)
             {
@@ -136,17 +181,31 @@ namespace appReversotask.Controllers
                         throw;
                     }
                 }
+
                 return RedirectToAction(nameof(Index));
             }
-            ViewData["MedicoId"] = new SelectList(_context.Medicos, "Codigo", "Codigo", consulta.MedicoId);
-            ViewData["PacienteId"] = new SelectList(_context.Paciente, "Codigo", "Codigo", consulta.PacienteId);
+
+            ViewData["MedicoId"] = new SelectList(
+                _context.Medicos,
+                "Codigo",
+                "Nome",
+                consulta.MedicoId
+            );
+
+            ViewData["PacienteId"] = new SelectList(
+                _context.Paciente,
+                "Codigo",
+                "Nome",
+                consulta.PacienteId
+            );
+
             return View(consulta);
         }
 
         // GET: Consulta/Delete/5
         public async Task<IActionResult> Delete(int? id)
         {
-            if (id == null || _context.Consulta == null)
+            if (id == null)
             {
                 return NotFound();
             }
@@ -155,6 +214,7 @@ namespace appReversotask.Controllers
                 .Include(c => c.Medico)
                 .Include(c => c.Paciente)
                 .FirstOrDefaultAsync(m => m.Codigo == id);
+
             if (consulta == null)
             {
                 return NotFound();
@@ -168,23 +228,22 @@ namespace appReversotask.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-            if (_context.Consulta == null)
-            {
-                return Problem("Entity set 'DbClinicaContext.Consulta'  is null.");
-            }
             var consulta = await _context.Consulta.FindAsync(id);
+
             if (consulta != null)
             {
                 _context.Consulta.Remove(consulta);
             }
-            
+
             await _context.SaveChangesAsync();
+
             return RedirectToAction(nameof(Index));
         }
 
+        // Verifica se a consulta existe
         private bool ConsultaExists(int id)
         {
-          return (_context.Consulta?.Any(e => e.Codigo == id)).GetValueOrDefault();
+            return _context.Consulta.Any(e => e.Codigo == id);
         }
     }
 }
